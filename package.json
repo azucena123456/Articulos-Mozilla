@@ -12,6 +12,7 @@
     "puppeteer": "^24.10.2",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "rss-parser": "^3.13.0",
     "xlsx": "^0.18.5"
   },
   "name": "practica_hacks",

@@ -1,42 +1,60 @@
-const puppeteer = require('puppeteer');
+const Parser = require("rss-parser");
+const axios = require("axios");
+const cheerio = require("cheerio");
 
-module.exports = async function getArticlesFromRSS() {
-    const browser = await puppeteer.launch({ headless: false });
-    const page = await browser.newPage();
 
-    try {
-        await page.goto('https://hacks.mozilla.org/', {
-            timeout: 60000,
-            waitUntil: 'load'
-        });
+const parser = new Parser({ timeout: 15000 });
 
-        await page.waitForSelector('ul.article-list > li');
-
-        const articulos = await page.evaluate(() => {
-            const posts = document.querySelectorAll('ul.article-list > li');
-            const data = [];
-
-            posts.forEach(post => {
-                data.push({
-                    title: post.querySelector('h3.post_title')?.innerText.trim() || '',
-                    summary: post.querySelector('p.post_tease')?.innerText.trim() || '',
-                    author: post.querySelector('img')?.alt?.replace(' Photo', '') || 'Desconocido',
-                    date: post.querySelector('abbr.published')?.title || '',
-                    url: post.querySelector('a')?.href || '',
-                    image: post.querySelector('img')?.src || ''
-                });
-            });
-
-            return data;
-        });
-
-        console.log(`✅ Se extrajeron ${articulos.length} artículos`);
-        return articulos;
-        
-    } catch (error) {
-        console.error("Error al obtener los artículos:", error.message);
-        return []; 
-    } finally {
-        await browser.close();
-    }
+function extractImageFromContent(content) {
+  if (!content) return null;
+  const match = content.match(/<img[^>]+src="([^">]+)"/);
+  return match ? match[1] : null;
 }
+
+async function getArticlesFromRSS() {
+  try {
+    const feed = await parser.parseURL("https://hacks.mozilla.org/feed/");
+    console.log(`📌 Artículos en el feed RSS: ${feed.items.length}`);
+    
+    return feed.items.map(item => ({
+      title: item.title || "Sin título",
+      summary: item.contentSnippet || "Sin resumen",
+      author: item.creator || item.author || "Desconocido",
+      date: item.isoDate || new Date().toISOString(),
+      url: item.link || "#",
+      image: extractImageFromContent(item["content:encoded"] || item.content || ""),
+    }));
+  } catch (error) {
+    console.error("❌ Error al obtener el RSS:", error.message);
+    return [];
+  }
+}
+
+
+async function scrapeMozillaArticles() {
+  try {
+    const { data } = await axios.get("https://hacks.mozilla.org", { timeout: 15000 });
+    const $ = cheerio.load(data);
+    const articles = [];
+    
+    $(".post-card").each((i, el) => {
+      articles.push({
+        title: $(el).find("h2").text().trim(),
+        summary: $(el).find(".post-card-excerpt").text().trim() || "Sin resumen",
+        author: $(el).find(".post-card-author").text().trim() || "Desconocido",
+        date: $(el).find("time").attr("datetime") || new Date().toISOString(),
+        url: $(el).find("a").attr("href") || "#",
+        image: $(el).find("img").attr("src") || null,
+      });
+    });
+    
+    console.log(`📌 Artículos extraídos (scraping): ${articles.length}`);
+    return articles;
+  } catch (error) {
+    console.error("❌ Error en scraping:", error.message);
+    return [];
+  }
+}
+
+
+module.exports = getArticlesFromRSS; 
